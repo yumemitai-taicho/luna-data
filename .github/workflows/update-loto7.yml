@@ -3,7 +3,8 @@ name: Update Loto7 CSV
 on:
   workflow_dispatch:
   schedule:
-    - cron: "15 13 * * 2,5"
+    - cron: "0 11 * * 5"
+    - cron: "0 22 * * 5"
 
 permissions:
   contents: write
