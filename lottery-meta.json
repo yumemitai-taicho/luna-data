@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "updatedAt": null,
+  "games": {
+    "loto7": {
+      "enabled": true,
+      "displayName": "ロト7",
+      "lastDrawNumber": null,
+      "lastDrawDate": null,
+      "recordCount": 0,
+      "csvUrl": "https://yumemitai-taicho.github.io/luna-data/loto7-history.csv",
+      "updatedAt": null,
+      "source": "rakuten"
+    },
+    "loto6": {
+      "enabled": false,
+      "displayName": "ロト6",
+      "lastDrawNumber": null,
+      "lastDrawDate": null,
+      "recordCount": 0,
+      "csvUrl": "https://yumemitai-taicho.github.io/luna-data/loto6-history.csv",
+      "updatedAt": null,
+      "source": null
+    },
+    "miniloto": {
+      "enabled": false,
+      "displayName": "ミニロト",
+      "lastDrawNumber": null,
+      "lastDrawDate": null,
+      "recordCount": 0,
+      "csvUrl": "https://yumemitai-taicho.github.io/luna-data/miniloto-history.csv",
+      "updatedAt": null,
+      "source": null
+    },
+    "numbers3": {
+      "enabled": false,
+      "displayName": "ナンバーズ3",
+      "lastDrawNumber": null,
+      "lastDrawDate": null,
+      "recordCount": 0,
+      "csvUrl": "https://yumemitai-taicho.github.io/luna-data/numbers3-history.csv",
+      "updatedAt": null,
+      "source": null
+    },
+    "numbers4": {
+      "enabled": false,
+      "displayName": "ナンバーズ4",
+      "lastDrawNumber": null,
+      "lastDrawDate": null,
+      "recordCount": 0,
+      "csvUrl": "https://yumemitai-taicho.github.io/luna-data/numbers4-history.csv",
+      "updatedAt": null,
+      "source": null
+    }
+  }
+}
