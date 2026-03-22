@@ -4,7 +4,7 @@
   "games": {
     "loto7": {
       "enabled": true,
-      "displayName": "ロト7",
+      "displayName": "Luna ロト7",
       "lastDrawNumber": null,
       "lastDrawDate": null,
       "recordCount": 0,
@@ -14,7 +14,7 @@
     },
     "loto6": {
       "enabled": false,
-      "displayName": "ロト6",
+      "displayName": "Luna ロト6",
       "lastDrawNumber": null,
       "lastDrawDate": null,
       "recordCount": 0,
@@ -24,7 +24,7 @@
     },
     "miniloto": {
       "enabled": false,
-      "displayName": "ミニロト",
+      "displayName": "Luna ミニロト",
       "lastDrawNumber": null,
       "lastDrawDate": null,
       "recordCount": 0,
@@ -34,7 +34,7 @@
     },
     "numbers3": {
       "enabled": false,
-      "displayName": "ナンバーズ3",
+      "displayName": "Artemis ナンバーズ3",
       "lastDrawNumber": null,
       "lastDrawDate": null,
       "recordCount": 0,
@@ -44,7 +44,7 @@
     },
     "numbers4": {
       "enabled": false,
-      "displayName": "ナンバーズ4",
+      "displayName": "Artemis ナンバーズ4",
       "lastDrawNumber": null,
       "lastDrawDate": null,
       "recordCount": 0,
