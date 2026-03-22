@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const cheerio = require("cheerio");
+const iconv = require("iconv-lite");
 
 const CSV_PATH = path.resolve(process.cwd(), "loto7-history.csv");
 const TMP_CSV_PATH = path.resolve(process.cwd(), "loto7-history.csv.tmp");
@@ -31,9 +32,10 @@ function log(level, message) {
 
 async function fetchHtml(url) {
   log("INFO", `fetching ${url}`);
+
   const res = await fetch(url, {
     headers: {
-      "user-agent": "Mozilla/5.0 (compatible; LunaSystem/1.0; +https://github.com/)",
+      "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
       "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "accept-language": "ja,en-US;q=0.9,en;q=0.8",
       "cache-control": "no-cache",
@@ -45,7 +47,28 @@ async function fetchHtml(url) {
     throw new Error(`HTTP ${res.status} while fetching ${url}`);
   }
 
-  return await res.text();
+  const arrayBuffer = await res.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
+  const contentType = String(res.headers.get("content-type") || "").toLowerCase();
+
+  // まずUTF-8を試す
+  let html = buffer.toString("utf8");
+
+  // 明らかに文字化けっぽい場合は Shift_JIS / CP932 を試す
+  const looksBroken =
+    html.includes("�") ||
+    (!html.includes("ロト") && !html.includes("宝くじ") && !html.includes("LOTO"));
+
+  if (looksBroken || contentType.includes("shift_jis") || contentType.includes("sjis")) {
+    try {
+      html = iconv.decode(buffer, "cp932");
+    } catch (_) {
+      // fallbackでutf8のまま
+    }
+  }
+
+  return html;
 }
 
 function normalizeWhitespace(text) {
@@ -224,83 +247,67 @@ function mergeRecord(existingRecords, incomingRecord) {
   return { updated: true, records: merged };
 }
 
-function parseWinningNoPage(html) {
+function extractBodyText(html) {
   const $ = cheerio.load(html);
   const text = normalizeWhitespace($("body").text());
-
-  // 例:
-  // ロト7 第669回 2026年03月20日（金曜日） 抽せん数字 03050607091316 ボーナス数字 1123
-  const regex = /ロト7\s*第\s*(\d+)\s*回.*?(\d{4}年\d{1,2}月\d{1,2}日).*?抽せん数字\s*([0-9]{14}).*?ボーナス数字\s*([0-9]{4})/;
-  const m = text.match(regex);
-  if (!m) {
-    throw new Error("Could not parse winning_no.html for Loto7");
-  }
-
-  const drawNumber = String(Number(m[1]));
-  const drawDate = toIsoDateFromJa(m[2]);
-  const mains = m[3].match(/\d{2}/g);
-  const bonus = m[4].match(/\d{2}/g);
-
-  if (!drawDate || !mains || mains.length !== 7 || !bonus || bonus.length !== 2) {
-    throw new Error("Invalid parsed data from winning_no.html");
-  }
-
-  return normalizeRecord({
-    drawNumber,
-    drawDate,
-    n1: mains[0],
-    n2: mains[1],
-    n3: mains[2],
-    n4: mains[3],
-    n5: mains[4],
-    n6: mains[5],
-    n7: mains[6],
-    b1: bonus[0],
-    b2: bonus[1]
-  });
+  return text;
 }
 
-function parseRecentPage(html, existingRecords) {
-  const $ = cheerio.load(html);
-  const text = normalizeWhitespace($("body").text());
+function debugText(label, text) {
+  const snippet = text.slice(0, 1200);
+  log("INFO", `${label} text snippet: ${snippet}`);
+}
 
-  // 例:
-  // 回号 第669回 抽せん日 2026年03月20日（金曜日） 抽せん数字 本数字 03050607091316 ボーナス数字 1123
-  const regex = /回号\s*第\s*(\d+)\s*回\s*抽せん日\s*(\d{4}年\d{1,2}月\d{1,2}日).*?本数字\s*([0-9]{14}).*?ボーナス数字\s*([0-9]{4})/g;
-
+function tryParseBlocks(text) {
   const candidates = [];
-  let m;
-  while ((m = regex.exec(text)) !== null) {
-    const drawNumber = String(Number(m[1]));
-    const drawDate = toIsoDateFromJa(m[2]);
-    const mains = m[3].match(/\d{2}/g);
-    const bonus = m[4].match(/\d{2}/g);
 
-    if (!drawDate || !mains || mains.length !== 7 || !bonus || bonus.length !== 2) {
-      continue;
-    }
+  // 「第669回」「2026年3月20日」「01 02 03 04 05 06 07」「08 09」系
+  const blockRegex = /第\s*(\d+)\s*回([\s\S]{0,300}?)(\d{4}年\d{1,2}月\d{1,2}日)([\s\S]{0,500}?)/g;
+  let m;
+
+  while ((m = blockRegex.exec(text)) !== null) {
+    const drawNumber = String(Number(m[1]));
+    const drawDate = toIsoDateFromJa(m[3]);
+    const area = normalizeWhitespace(m[0] + " " + (m[4] || ""));
+
+    const nums = [...area.matchAll(/\b(\d{1,2})\b/g)]
+      .map(x => Number(x[1]))
+      .filter(n => n >= 1 && n <= 37)
+      .map(n => pad2(n));
+
+    if (!drawDate) continue;
+    if (nums.length < 9) continue;
 
     try {
       candidates.push(normalizeRecord({
         drawNumber,
         drawDate,
-        n1: mains[0],
-        n2: mains[1],
-        n3: mains[2],
-        n4: mains[3],
-        n5: mains[4],
-        n6: mains[5],
-        n7: mains[6],
-        b1: bonus[0],
-        b2: bonus[1]
+        n1: nums[0],
+        n2: nums[1],
+        n3: nums[2],
+        n4: nums[3],
+        n5: nums[4],
+        n6: nums[5],
+        n7: nums[6],
+        b1: nums[7],
+        b2: nums[8]
       }));
     } catch (_) {
-      // skip invalid candidate
+      // skip
     }
   }
 
+  return candidates;
+}
+
+function parsePayPayPage(html, existingRecords) {
+  const text = extractBodyText(html);
+  debugText("paypay", text);
+
+  const candidates = tryParseBlocks(text);
+
   if (!candidates.length) {
-    throw new Error("Could not parse loto7recent.html");
+    throw new Error("Could not parse PayPay page");
   }
 
   candidates.sort((a, b) => Number(b.drawNumber) - Number(a.drawNumber));
@@ -319,10 +326,7 @@ async function fetchLatestRecord(existingRecords) {
   for (const url of SOURCE_URLS) {
     try {
       const html = await fetchHtml(url);
-      const record = url.includes("winning_no.html")
-        ? parseWinningNoPage(html)
-        : parseRecentPage(html, existingRecords);
-
+      const record = parsePayPayPage(html, existingRecords);
       log("INFO", `parsed candidate drawNumber=${record.drawNumber}, drawDate=${record.drawDate}`);
       return record;
     } catch (err) {
