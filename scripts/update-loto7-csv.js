@@ -119,6 +119,10 @@ function parseCsvLine(line) {
   return result;
 }
 
+function sortRecordsNewestFirst(records) {
+  return [...records].sort((a, b) => Number(b.drawNumber) - Number(a.drawNumber));
+}
+
 function loadExistingCsv() {
   if (!fs.existsSync(CSV_PATH)) {
     throw new Error(`CSV file not found: ${CSV_PATH}`);
@@ -149,13 +153,15 @@ function loadExistingCsv() {
     records.push(rec);
   }
 
-  return records;
+  return sortRecordsNewestFirst(records);
 }
 
 function writeCsv(records) {
+  const sorted = sortRecordsNewestFirst(records);
+
   const lines = [
     CSV_HEADERS.join(","),
-    ...records.map(rec => CSV_HEADERS.map(h => escapeCsv(rec[h] ?? "")).join(","))
+    ...sorted.map(rec => CSV_HEADERS.map(h => escapeCsv(rec[h] ?? "")).join(","))
   ];
 
   fs.writeFileSync(TMP_CSV_PATH, lines.join("\n") + "\n", "utf8");
@@ -224,14 +230,11 @@ function mergeRecord(existingRecords, incomingRecord) {
     if (!recordsEqual(existing, incomingRecord)) {
       throw new Error(`drawNumber ${incomingRecord.drawNumber} already exists but data differs`);
     }
-    return { updated: false, records: existingRecords };
+    return { updated: false, records: sortRecordsNewestFirst(existingRecords) };
   }
 
-  const merged = [...existingRecords, incomingRecord].sort(
-    (a, b) => Number(a.drawNumber) - Number(b.drawNumber)
-  );
-
-  return { updated: true, records: merged };
+  const merged = [...existingRecords, incomingRecord];
+  return { updated: true, records: sortRecordsNewestFirst(merged) };
 }
 
 function parseRakutenPage(html, existingRecords) {
@@ -284,14 +287,14 @@ function parseRakutenPage(html, existingRecords) {
     throw new Error("Could not parse Rakuten Loto7 page");
   }
 
-  candidates.sort((a, b) => Number(b.drawNumber) - Number(a.drawNumber));
+  const sortedCandidates = sortRecordsNewestFirst(candidates);
 
   const existingMax = existingRecords.reduce((max, rec) => {
     const n = Number(rec.drawNumber || 0);
     return n > max ? n : max;
   }, 0);
 
-  return candidates.find(c => Number(c.drawNumber) > existingMax) || candidates[0];
+  return sortedCandidates.find(c => Number(c.drawNumber) > existingMax) || sortedCandidates[0];
 }
 
 async function fetchLatestRecord(existingRecords) {
@@ -313,6 +316,7 @@ async function main() {
 
     if (!updated) {
       log("INFO", `no update: drawNumber ${incomingRecord.drawNumber} already exists`);
+      writeCsv(records);
       return;
     }
 
