@@ -4,7 +4,11 @@ const path = require("path");
 const CSV_PATH = path.resolve(process.cwd(), "loto7-history.csv");
 const TMP_CSV_PATH = path.resolve(process.cwd(), "loto7-history.csv.tmp");
 
+const META_PATH = path.resolve(process.cwd(), "lottery-meta.json");
+const TMP_META_PATH = path.resolve(process.cwd(), "lottery-meta.json.tmp");
+
 const SOURCE_URL = "https://takarakuji.rakuten.co.jp/backnumber/loto7/";
+const CSV_PUBLIC_URL = "https://yumemitai-taicho.github.io/luna-data/loto7-history.csv";
 
 const CSV_HEADERS = [
   "drawNumber",
@@ -23,6 +27,18 @@ const CSV_HEADERS = [
 function log(level, message) {
   const now = new Date().toISOString();
   console.log(`[${now}] ${level}: ${message}`);
+}
+
+function getJstIsoString() {
+  const now = new Date();
+  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const y = jst.getUTCFullYear();
+  const m = String(jst.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(jst.getUTCDate()).padStart(2, "0");
+  const hh = String(jst.getUTCHours()).padStart(2, "0");
+  const mm = String(jst.getUTCMinutes()).padStart(2, "0");
+  const ss = String(jst.getUTCSeconds()).padStart(2, "0");
+  return `${y}-${m}-${d}T${hh}:${mm}:${ss}+09:00`;
 }
 
 async function fetchHtml(url) {
@@ -297,6 +313,130 @@ function parseRakutenPage(html, existingRecords) {
   return sortedCandidates.find(c => Number(c.drawNumber) > existingMax) || sortedCandidates[0];
 }
 
+function createDefaultMeta() {
+  return {
+    version: 1,
+    updatedAt: null,
+    games: {
+      loto7: {
+        enabled: true,
+        displayName: "ロト7",
+        lastDrawNumber: null,
+        lastDrawDate: null,
+        recordCount: 0,
+        csvUrl: CSV_PUBLIC_URL,
+        updatedAt: null,
+        source: "rakuten"
+      },
+      loto6: {
+        enabled: false,
+        displayName: "ロト6",
+        lastDrawNumber: null,
+        lastDrawDate: null,
+        recordCount: 0,
+        csvUrl: "https://yumemitai-taicho.github.io/luna-data/loto6-history.csv",
+        updatedAt: null,
+        source: null
+      },
+      miniloto: {
+        enabled: false,
+        displayName: "ミニロト",
+        lastDrawNumber: null,
+        lastDrawDate: null,
+        recordCount: 0,
+        csvUrl: "https://yumemitai-taicho.github.io/luna-data/miniloto-history.csv",
+        updatedAt: null,
+        source: null
+      },
+      numbers3: {
+        enabled: false,
+        displayName: "ナンバーズ3",
+        lastDrawNumber: null,
+        lastDrawDate: null,
+        recordCount: 0,
+        csvUrl: "https://yumemitai-taicho.github.io/luna-data/numbers3-history.csv",
+        updatedAt: null,
+        source: null
+      },
+      numbers4: {
+        enabled: false,
+        displayName: "ナンバーズ4",
+        lastDrawNumber: null,
+        lastDrawDate: null,
+        recordCount: 0,
+        csvUrl: "https://yumemitai-taicho.github.io/luna-data/numbers4-history.csv",
+        updatedAt: null,
+        source: null
+      }
+    }
+  };
+}
+
+function loadMeta() {
+  if (!fs.existsSync(META_PATH)) {
+    return createDefaultMeta();
+  }
+
+  const raw = fs.readFileSync(META_PATH, "utf8").replace(/^\uFEFF/, "").trim();
+  if (!raw) {
+    return createDefaultMeta();
+  }
+
+  const meta = JSON.parse(raw);
+
+  if (!meta.games) {
+    meta.games = {};
+  }
+  if (!meta.games.loto7) {
+    meta.games.loto7 = {
+      enabled: true,
+      displayName: "ロト7",
+      lastDrawNumber: null,
+      lastDrawDate: null,
+      recordCount: 0,
+      csvUrl: CSV_PUBLIC_URL,
+      updatedAt: null,
+      source: "rakuten"
+    };
+  }
+
+  return meta;
+}
+
+function writeMeta(meta) {
+  const json = JSON.stringify(meta, null, 2) + "\n";
+  fs.writeFileSync(TMP_META_PATH, json, "utf8");
+  fs.renameSync(TMP_META_PATH, META_PATH);
+}
+
+function updateLoto7Meta(meta, records) {
+  const now = getJstIsoString();
+  const sorted = sortRecordsNewestFirst(records);
+  const latest = sorted[0] || null;
+
+  if (!meta.version) {
+    meta.version = 1;
+  }
+  if (!meta.games) {
+    meta.games = {};
+  }
+  if (!meta.games.loto7) {
+    meta.games.loto7 = {};
+  }
+
+  meta.updatedAt = now;
+  meta.games.loto7.enabled = true;
+  meta.games.loto7.displayName = "ロト7";
+  meta.games.loto7.lastDrawNumber = latest ? Number(latest.drawNumber) : null;
+  meta.games.loto7.lastDrawDate = latest ? latest.drawDate : null;
+  meta.games.loto7.recordCount = sorted.length;
+  meta.games.loto7.csvUrl = CSV_PUBLIC_URL;
+  meta.games.loto7.updatedAt = now;
+  meta.games.loto7.source = "rakuten";
+
+  return meta;
+}
+
 async function fetchLatestRecord(existingRecords) {
   const html = await fetchHtml(SOURCE_URL);
   const record = parseRakutenPage(html, existingRecords);
@@ -314,14 +454,20 @@ async function main() {
     const incomingRecord = await fetchLatestRecord(existingRecords);
     const { updated, records } = mergeRecord(existingRecords, incomingRecord);
 
+    writeCsv(records);
+
+    const meta = loadMeta();
+    const updatedMeta = updateLoto7Meta(meta, records);
+    writeMeta(updatedMeta);
+
     if (!updated) {
       log("INFO", `no update: drawNumber ${incomingRecord.drawNumber} already exists`);
-      writeCsv(records);
+      log("INFO", "meta updated");
       return;
     }
 
-    writeCsv(records);
     log("INFO", `success: appended drawNumber ${incomingRecord.drawNumber}`);
+    log("INFO", "meta updated");
   } catch (err) {
     const message = String(err?.message || err);
 
