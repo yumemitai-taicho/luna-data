@@ -37,6 +37,6 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add loto7-history.csv
-          git commit -m "update: loto7-history.csv"
+          git add loto7-history.csv lottery-meta.json
+          git commit -m "update: loto7-history.csv and lottery-meta.json"
           git push
