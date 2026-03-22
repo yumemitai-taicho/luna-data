@@ -1,15 +1,10 @@
 const fs = require("fs");
 const path = require("path");
-const cheerio = require("cheerio");
-const iconv = require("iconv-lite");
 
 const CSV_PATH = path.resolve(process.cwd(), "loto7-history.csv");
 const TMP_CSV_PATH = path.resolve(process.cwd(), "loto7-history.csv.tmp");
 
-const SOURCE_URLS = [
-  "https://www.paypay-bank.co.jp/lottery/loto/winning_no.html",
-  "https://www.paypay-bank.co.jp/lottery/loto/loto7recent.html"
-];
+const SOURCE_URL = "https://takarakuji.rakuten.co.jp/backnumber/loto7/";
 
 const CSV_HEADERS = [
   "drawNumber",
@@ -35,7 +30,8 @@ async function fetchHtml(url) {
 
   const res = await fetch(url, {
     headers: {
-      "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+      "user-agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
       "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "accept-language": "ja,en-US;q=0.9,en;q=0.8",
       "cache-control": "no-cache",
@@ -47,28 +43,7 @@ async function fetchHtml(url) {
     throw new Error(`HTTP ${res.status} while fetching ${url}`);
   }
 
-  const arrayBuffer = await res.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-
-  const contentType = String(res.headers.get("content-type") || "").toLowerCase();
-
-  // まずUTF-8を試す
-  let html = buffer.toString("utf8");
-
-  // 明らかに文字化けっぽい場合は Shift_JIS / CP932 を試す
-  const looksBroken =
-    html.includes("�") ||
-    (!html.includes("ロト") && !html.includes("宝くじ") && !html.includes("LOTO"));
-
-  if (looksBroken || contentType.includes("shift_jis") || contentType.includes("sjis")) {
-    try {
-      html = iconv.decode(buffer, "cp932");
-    } catch (_) {
-      // fallbackでutf8のまま
-    }
-  }
-
-  return html;
+  return await res.text();
 }
 
 function normalizeWhitespace(text) {
@@ -81,12 +56,24 @@ function normalizeWhitespace(text) {
     .trim();
 }
 
+function stripTags(html) {
+  return normalizeWhitespace(
+    String(html || "")
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&#160;/gi, " ")
+      .replace(/&amp;/gi, "&")
+  );
+}
+
 function pad2(value) {
   return String(Number(value)).padStart(2, "0");
 }
 
-function toIsoDateFromJa(text) {
-  const m = String(text).match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+function toIsoDateFromSlash(text) {
+  const m = String(text).match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/);
   if (!m) return null;
   return `${m[1]}-${pad2(m[2])}-${pad2(m[3])}`;
 }
@@ -247,67 +234,54 @@ function mergeRecord(existingRecords, incomingRecord) {
   return { updated: true, records: merged };
 }
 
-function extractBodyText(html) {
-  const $ = cheerio.load(html);
-  const text = normalizeWhitespace($("body").text());
-  return text;
-}
+function parseRakutenPage(html, existingRecords) {
+  const text = stripTags(html);
+  log("INFO", `rakuten text snippet: ${text.slice(0, 1000)}`);
 
-function debugText(label, text) {
-  const snippet = text.slice(0, 1200);
-  log("INFO", `${label} text snippet: ${snippet}`);
-}
+  const regex =
+    /回号\s*第0*(\d+)回\s*抽せん日\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*本数字\s*([0-9\s]+?)\s*ボーナス数字\s*\((\d{1,2})\)\s*\((\d{1,2})\)/g;
 
-function tryParseBlocks(text) {
   const candidates = [];
+  let match;
 
-  // 「第669回」「2026年3月20日」「01 02 03 04 05 06 07」「08 09」系
-  const blockRegex = /第\s*(\d+)\s*回([\s\S]{0,300}?)(\d{4}年\d{1,2}月\d{1,2}日)([\s\S]{0,500}?)/g;
-  let m;
+  while ((match = regex.exec(text)) !== null) {
+    const drawNumber = String(Number(match[1]));
+    const drawDate = toIsoDateFromSlash(match[2]);
+    const mainNums = String(match[3])
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map(v => pad2(v));
 
-  while ((m = blockRegex.exec(text)) !== null) {
-    const drawNumber = String(Number(m[1]));
-    const drawDate = toIsoDateFromJa(m[3]);
-    const area = normalizeWhitespace(m[0] + " " + (m[4] || ""));
+    const bonusNums = [pad2(match[4]), pad2(match[5])];
 
-    const nums = [...area.matchAll(/\b(\d{1,2})\b/g)]
-      .map(x => Number(x[1]))
-      .filter(n => n >= 1 && n <= 37)
-      .map(n => pad2(n));
-
-    if (!drawDate) continue;
-    if (nums.length < 9) continue;
+    if (!drawDate || mainNums.length !== 7) {
+      continue;
+    }
 
     try {
-      candidates.push(normalizeRecord({
-        drawNumber,
-        drawDate,
-        n1: nums[0],
-        n2: nums[1],
-        n3: nums[2],
-        n4: nums[3],
-        n5: nums[4],
-        n6: nums[5],
-        n7: nums[6],
-        b1: nums[7],
-        b2: nums[8]
-      }));
+      candidates.push(
+        normalizeRecord({
+          drawNumber,
+          drawDate,
+          n1: mainNums[0],
+          n2: mainNums[1],
+          n3: mainNums[2],
+          n4: mainNums[3],
+          n5: mainNums[4],
+          n6: mainNums[5],
+          n7: mainNums[6],
+          b1: bonusNums[0],
+          b2: bonusNums[1]
+        })
+      );
     } catch (_) {
-      // skip
+      // skip invalid candidate
     }
   }
 
-  return candidates;
-}
-
-function parsePayPayPage(html, existingRecords) {
-  const text = extractBodyText(html);
-  debugText("paypay", text);
-
-  const candidates = tryParseBlocks(text);
-
   if (!candidates.length) {
-    throw new Error("Could not parse PayPay page");
+    throw new Error("Could not parse Rakuten Loto7 page");
   }
 
   candidates.sort((a, b) => Number(b.drawNumber) - Number(a.drawNumber));
@@ -321,21 +295,10 @@ function parsePayPayPage(html, existingRecords) {
 }
 
 async function fetchLatestRecord(existingRecords) {
-  let lastError = null;
-
-  for (const url of SOURCE_URLS) {
-    try {
-      const html = await fetchHtml(url);
-      const record = parsePayPayPage(html, existingRecords);
-      log("INFO", `parsed candidate drawNumber=${record.drawNumber}, drawDate=${record.drawDate}`);
-      return record;
-    } catch (err) {
-      lastError = err;
-      log("WARN", `failed on ${url}: ${err.message}`);
-    }
-  }
-
-  throw lastError || new Error("Failed to fetch from all source URLs");
+  const html = await fetchHtml(SOURCE_URL);
+  const record = parseRakutenPage(html, existingRecords);
+  log("INFO", `parsed candidate drawNumber=${record.drawNumber}, drawDate=${record.drawDate}`);
+  return record;
 }
 
 async function main() {
