@@ -6,8 +6,8 @@ const CSV_PATH = path.resolve(process.cwd(), "loto7-history.csv");
 const TMP_CSV_PATH = path.resolve(process.cwd(), "loto7-history.csv.tmp");
 
 const SOURCE_URLS = [
-  "https://www.mizuhobank.co.jp/takarakuji/check/loto/loto7/index.html",
-  "https://www.mizuhobank.co.jp/takarakuji/check/loto/loto7/backnumber/index.html"
+  "https://www.paypay-bank.co.jp/lottery/loto/winning_no.html",
+  "https://www.paypay-bank.co.jp/lottery/loto/loto7recent.html"
 ];
 
 const CSV_HEADERS = [
@@ -33,7 +33,11 @@ async function fetchHtml(url) {
   log("INFO", `fetching ${url}`);
   const res = await fetch(url, {
     headers: {
-      "user-agent": "Mozilla/5.0 (compatible; LunaSystem/1.0; +https://github.com/)"
+      "user-agent": "Mozilla/5.0 (compatible; LunaSystem/1.0; +https://github.com/)",
+      "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "accept-language": "ja,en-US;q=0.9,en;q=0.8",
+      "cache-control": "no-cache",
+      "pragma": "no-cache"
     }
   });
 
@@ -45,7 +49,7 @@ async function fetchHtml(url) {
 }
 
 function normalizeWhitespace(text) {
-  return text
+  return String(text || "")
     .replace(/\r/g, " ")
     .replace(/\n/g, " ")
     .replace(/\t/g, " ")
@@ -55,16 +59,13 @@ function normalizeWhitespace(text) {
 }
 
 function pad2(value) {
-  return String(value).padStart(2, "0");
+  return String(Number(value)).padStart(2, "0");
 }
 
 function toIsoDateFromJa(text) {
-  const m = text.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+  const m = String(text).match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
   if (!m) return null;
-  const year = m[1];
-  const month = pad2(m[2]);
-  const day = pad2(m[3]);
-  return `${year}-${month}-${day}`;
+  return `${m[1]}-${pad2(m[2])}-${pad2(m[3])}`;
 }
 
 function escapeCsv(value) {
@@ -116,18 +117,14 @@ function loadExistingCsv() {
   const raw = fs.readFileSync(CSV_PATH, "utf8").replace(/^\uFEFF/, "");
   const lines = raw.split(/\r?\n/).filter(line => line.trim() !== "");
 
-  if (lines.length === 0) {
-    return [];
-  }
+  if (lines.length === 0) return [];
 
-  const header = parseCsvLine(lines[0]);
+  const header = parseCsvLine(lines[0]).map(v => v.trim());
   const expected = CSV_HEADERS.join(",");
   const actual = header.join(",");
 
   if (actual !== expected) {
-    throw new Error(
-      `CSV header mismatch.\nExpected: ${expected}\nActual:   ${actual}`
-    );
+    throw new Error(`CSV header mismatch.\nExpected: ${expected}\nActual:   ${actual}`);
   }
 
   const records = [];
@@ -137,7 +134,7 @@ function loadExistingCsv() {
 
     const rec = {};
     CSV_HEADERS.forEach((h, idx) => {
-      rec[h] = (cols[idx] || "").trim();
+      rec[h] = String(cols[idx] || "").trim();
     });
     records.push(rec);
   }
@@ -148,9 +145,7 @@ function loadExistingCsv() {
 function writeCsv(records) {
   const lines = [
     CSV_HEADERS.join(","),
-    ...records.map(rec =>
-      CSV_HEADERS.map(h => escapeCsv(rec[h] ?? "")).join(",")
-    )
+    ...records.map(rec => CSV_HEADERS.map(h => escapeCsv(rec[h] ?? "")).join(","))
   ];
 
   fs.writeFileSync(TMP_CSV_PATH, lines.join("\n") + "\n", "utf8");
@@ -183,8 +178,7 @@ function validateRecord(record) {
   }
 
   const mainNums = [record.n1, record.n2, record.n3, record.n4, record.n5, record.n6, record.n7];
-  const mainSet = new Set(mainNums);
-  if (mainSet.size !== 7) {
+  if (new Set(mainNums).size !== 7) {
     throw new Error(`Duplicate main numbers detected: ${mainNums.join(",")}`);
   }
 }
@@ -208,108 +202,17 @@ function normalizeRecord(record) {
   return normalized;
 }
 
-function extractCandidatesFromText(text) {
-  const candidates = [];
-  const roundRegex = /第\s*(\d+)\s*回/g;
-  let match;
-
-  while ((match = roundRegex.exec(text)) !== null) {
-    const drawNumber = match[1];
-    const startIdx = match.index;
-    const slice = text.slice(startIdx, startIdx + 700);
-
-    const dateMatch = slice.match(/(\d{4}\D{0,3}\d{1,2}\D{0,3}\d{1,2}\D{0,3})/);
-    const drawDate = dateMatch ? toIsoDateFromJa(dateMatch[1]) : null;
-
-    const numMatches = [...slice.matchAll(/\b(\d{1,2})\b/g)].map(m => m[1]);
-
-    const filteredNums = numMatches
-      .map(v => Number(v))
-      .filter(v => v >= 1 && v <= 37)
-      .map(v => pad2(v));
-
-    if (!drawDate) continue;
-
-    const uniqueWindowNums = [];
-    for (const n of filteredNums) {
-      if (uniqueWindowNums.length >= 9) break;
-      uniqueWindowNums.push(n);
-    }
-
-    if (uniqueWindowNums.length < 9) continue;
-
-    candidates.push({
-      drawNumber: String(Number(drawNumber)),
-      drawDate,
-      n1: uniqueWindowNums[0],
-      n2: uniqueWindowNums[1],
-      n3: uniqueWindowNums[2],
-      n4: uniqueWindowNums[3],
-      n5: uniqueWindowNums[4],
-      n6: uniqueWindowNums[5],
-      n7: uniqueWindowNums[6],
-      b1: uniqueWindowNums[7],
-      b2: uniqueWindowNums[8]
-    });
-  }
-
-  return candidates;
-}
-
-function pickBestCandidate(candidates, existingRecords) {
-  if (!candidates.length) {
-    throw new Error("No candidate record found from fetched source");
-  }
-
-  const existingMax = existingRecords.reduce((max, rec) => {
-    const n = Number(rec.drawNumber || 0);
-    return n > max ? n : max;
-  }, 0);
-
-  const normalizedCandidates = [];
-  for (const c of candidates) {
-    try {
-      normalizedCandidates.push(normalizeRecord(c));
-    } catch (err) {
-      log("WARN", `candidate rejected: ${err.message}`);
-    }
-  }
-
-  if (!normalizedCandidates.length) {
-    throw new Error("All parsed candidates were invalid");
-  }
-
-  normalizedCandidates.sort((a, b) => Number(b.drawNumber) - Number(a.drawNumber));
-
-  const newer = normalizedCandidates.find(c => Number(c.drawNumber) > existingMax);
-  if (newer) return newer;
-
-  return normalizedCandidates[0];
-}
-
-function parseLoto7RecordFromHtml(html, existingRecords) {
-  const $ = cheerio.load(html);
-  const bodyText = normalizeWhitespace($("body").text());
-
-  const candidates = extractCandidatesFromText(bodyText);
-  return pickBestCandidate(candidates, existingRecords);
-}
-
 function recordsEqual(a, b) {
   return CSV_HEADERS.every(h => String(a[h] ?? "") === String(b[h] ?? ""));
 }
 
 function mergeRecord(existingRecords, incomingRecord) {
-  const byDrawNumber = new Map(
-    existingRecords.map(rec => [String(rec.drawNumber), rec])
-  );
-
+  const byDrawNumber = new Map(existingRecords.map(rec => [String(rec.drawNumber), rec]));
   const existing = byDrawNumber.get(String(incomingRecord.drawNumber));
+
   if (existing) {
     if (!recordsEqual(existing, incomingRecord)) {
-      throw new Error(
-        `drawNumber ${incomingRecord.drawNumber} already exists but data differs`
-      );
+      throw new Error(`drawNumber ${incomingRecord.drawNumber} already exists but data differs`);
     }
     return { updated: false, records: existingRecords };
   }
@@ -321,17 +224,106 @@ function mergeRecord(existingRecords, incomingRecord) {
   return { updated: true, records: merged };
 }
 
+function parseWinningNoPage(html) {
+  const $ = cheerio.load(html);
+  const text = normalizeWhitespace($("body").text());
+
+  // 例:
+  // ロト7 第669回 2026年03月20日（金曜日） 抽せん数字 03050607091316 ボーナス数字 1123
+  const regex = /ロト7\s*第\s*(\d+)\s*回.*?(\d{4}年\d{1,2}月\d{1,2}日).*?抽せん数字\s*([0-9]{14}).*?ボーナス数字\s*([0-9]{4})/;
+  const m = text.match(regex);
+  if (!m) {
+    throw new Error("Could not parse winning_no.html for Loto7");
+  }
+
+  const drawNumber = String(Number(m[1]));
+  const drawDate = toIsoDateFromJa(m[2]);
+  const mains = m[3].match(/\d{2}/g);
+  const bonus = m[4].match(/\d{2}/g);
+
+  if (!drawDate || !mains || mains.length !== 7 || !bonus || bonus.length !== 2) {
+    throw new Error("Invalid parsed data from winning_no.html");
+  }
+
+  return normalizeRecord({
+    drawNumber,
+    drawDate,
+    n1: mains[0],
+    n2: mains[1],
+    n3: mains[2],
+    n4: mains[3],
+    n5: mains[4],
+    n6: mains[5],
+    n7: mains[6],
+    b1: bonus[0],
+    b2: bonus[1]
+  });
+}
+
+function parseRecentPage(html, existingRecords) {
+  const $ = cheerio.load(html);
+  const text = normalizeWhitespace($("body").text());
+
+  // 例:
+  // 回号 第669回 抽せん日 2026年03月20日（金曜日） 抽せん数字 本数字 03050607091316 ボーナス数字 1123
+  const regex = /回号\s*第\s*(\d+)\s*回\s*抽せん日\s*(\d{4}年\d{1,2}月\d{1,2}日).*?本数字\s*([0-9]{14}).*?ボーナス数字\s*([0-9]{4})/g;
+
+  const candidates = [];
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    const drawNumber = String(Number(m[1]));
+    const drawDate = toIsoDateFromJa(m[2]);
+    const mains = m[3].match(/\d{2}/g);
+    const bonus = m[4].match(/\d{2}/g);
+
+    if (!drawDate || !mains || mains.length !== 7 || !bonus || bonus.length !== 2) {
+      continue;
+    }
+
+    try {
+      candidates.push(normalizeRecord({
+        drawNumber,
+        drawDate,
+        n1: mains[0],
+        n2: mains[1],
+        n3: mains[2],
+        n4: mains[3],
+        n5: mains[4],
+        n6: mains[5],
+        n7: mains[6],
+        b1: bonus[0],
+        b2: bonus[1]
+      }));
+    } catch (_) {
+      // skip invalid candidate
+    }
+  }
+
+  if (!candidates.length) {
+    throw new Error("Could not parse loto7recent.html");
+  }
+
+  candidates.sort((a, b) => Number(b.drawNumber) - Number(a.drawNumber));
+
+  const existingMax = existingRecords.reduce((max, rec) => {
+    const n = Number(rec.drawNumber || 0);
+    return n > max ? n : max;
+  }, 0);
+
+  return candidates.find(c => Number(c.drawNumber) > existingMax) || candidates[0];
+}
+
 async function fetchLatestRecord(existingRecords) {
   let lastError = null;
 
   for (const url of SOURCE_URLS) {
     try {
       const html = await fetchHtml(url);
-      const record = parseLoto7RecordFromHtml(html, existingRecords);
-      log(
-        "INFO",
-        `parsed candidate drawNumber=${record.drawNumber}, drawDate=${record.drawDate}`
-      );
+      const record = url.includes("winning_no.html")
+        ? parseWinningNoPage(html)
+        : parseRecentPage(html, existingRecords);
+
+      log("INFO", `parsed candidate drawNumber=${record.drawNumber}, drawDate=${record.drawDate}`);
       return record;
     } catch (err) {
       lastError = err;
@@ -360,6 +352,13 @@ async function main() {
     writeCsv(records);
     log("INFO", `success: appended drawNumber ${incomingRecord.drawNumber}`);
   } catch (err) {
+    const message = String(err?.message || err);
+
+    if (message.includes("HTTP 403")) {
+      log("WARN", "source blocked request with HTTP 403; skip update");
+      return;
+    }
+
     log("ERROR", err.stack || err.message);
     process.exitCode = 1;
   }
