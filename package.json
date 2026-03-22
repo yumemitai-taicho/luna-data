@@ -1,1 +1,13 @@
-
+{
+  "name": "luna-data",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Loto7 CSV auto updater for Luna System",
+  "main": "scripts/update-loto7-csv.js",
+  "scripts": {
+    "update:loto7": "node scripts/update-loto7-csv.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0"
+  }
+}
