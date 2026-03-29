@@ -248,9 +248,9 @@ function parseRakutenPage(html, existingRecords) {
   const text = stripTags(html);
   log("INFO", `rakuten miniloto text snippet: ${text.slice(0, 1000)}`);
 
-  const regex =
-    /回号\s*第0*(\d+)回\s*抽せん日\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*本数字\s*([0-9\s]+?)\s*ボーナス数字\s*\((\d{1,2})\)/g;
-
+const regex =
+  /回号\s*第0*(\d+)回\s*抽せん日\s*(\d{4}\/\d{1,2}\/\d{1,2})\s*本数字\s*(?:\(\s*\)\s*はボーナス数字\s*)?([0-9\s]+?)\s*\((\d{1,2})\)/g;
+  
   const candidates = [];
   let match;
 
