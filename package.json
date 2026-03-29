@@ -6,6 +6,8 @@
   "main": "scripts/update-loto7-csv.js",
   "scripts": {
     "update:loto7": "node scripts/update-loto7-csv.js"
+    "update:loto6": "node scripts/update-loto6-csv.js",
+    "update:miniloto": "node scripts/update-miniloto-csv.js"
   },
   "dependencies": {
     "cheerio": "^1.0.0",
