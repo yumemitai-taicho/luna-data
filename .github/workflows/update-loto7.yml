@@ -3,12 +3,9 @@ name: Update Loto7 CSV
 on:
   workflow_dispatch:
   schedule:
-    - cron: "21 20 * * 5"
-      timezone: "Asia/Tokyo"
-    - cron: "48 20 * * 5"
-      timezone: "Asia/Tokyo"
-    - cron: "2 3 * * 6"
-      timezone: "Asia/Tokyo"
+    - cron: "21 11 * * 5"
+    - cron: "48 11 * * 5"
+    - cron: "2 18 * * 5"
 
 permissions:
   contents: write
