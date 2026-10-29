@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-27T20:24:59+09:00",
+  "updatedAt": "2026-10-29T20:30:26+09:00",
   "games": {
     "loto7": {
       "enabled": true,
@@ -15,11 +15,11 @@
     "loto6": {
       "enabled": true,
       "displayName": "ロト6",
-      "lastDrawNumber": 2149,
-      "lastDrawDate": "2026-10-26",
-      "recordCount": 2149,
+      "lastDrawNumber": 2150,
+      "lastDrawDate": "2026-10-29",
+      "recordCount": 2150,
       "csvUrl": "https://yumemitai-taicho.github.io/luna-data/loto6-history.csv",
-      "updatedAt": "2026-10-26T20:26:45+09:00",
+      "updatedAt": "2026-10-29T20:30:26+09:00",
       "source": "rakuten"
     },
     "miniloto": {
